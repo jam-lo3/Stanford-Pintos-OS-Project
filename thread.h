@@ -80,6 +80,19 @@ typedef int tid_t;
    only because they are mutually exclusive: only a thread in the
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
+
+/* Added for 1.1 */   
+enum blocked_reason { UNKNOWN, SLEEP };
+struct thread_blocked 
+{
+  enum blocked_reason reason;
+  union 
+  {
+    int wakeup_time;
+  };
+};
+
+
 struct thread
   {
     /* Owned by thread.c. */
@@ -100,6 +113,10 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+	
+	/* Added for 1.1 */
+	struct thread_blocked blocked;
+
   };
 
 /* If false (default), use round-robin scheduler.
