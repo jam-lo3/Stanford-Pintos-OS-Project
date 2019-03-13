@@ -1,4 +1,5 @@
 #include "threads/thread.h"
+#include "devices/timer.h"
 #include <debug.h>
 #include <stddef.h>
 #include <random.h>
@@ -11,6 +12,8 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -116,30 +119,6 @@ thread_start (void)
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down (&idle_started);
 }
-/* Added for 1.1 */
-static struct list blocked_sleep_list;
-
-static void
-try_wake_sleep_threads (void) 
-{
-  int64_t ticks = timer_ticks ();
-  while (true)
-  {
-    if (list_empty(&blocked_sleep_list))
-	{
-	  return;
-	}
-	
-	struct list_elem *it = list_front(&blocked_sleep_list);
-	struct thread *t = list_entry(it, struct thread, elem);
-	if (t->blocked.wakeup_time > ticks)
-	{
-	  return;
-	}
-	list_pop_front(&blocked_sleep_list);
-	thread_unblock(t);
-  }
-}
 
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
@@ -161,9 +140,6 @@ thread_tick (void)
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
-
-  try_wake_sleep_threads ();
-
 }
 
 /* Prints thread statistics. */
@@ -491,6 +467,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
+  /* Added for 1.1 */
+  sema_init (&t->timer_sema, 0);
+  
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
@@ -605,38 +584,22 @@ allocate_tid (void)
 
   return tid;
 }
+
+/* Added for 1.1 */
+
+bool
+less_wakeup (const struct list_elem *left, const struct list_elem *right, void *aux UNUSED)
+{
+  const struct thread *tleft = list_entry (left, struct thread, timer_elem);
+  const struct thread *tright = list_entry (right, struct thread, timer_elem);
+
+  if (tleft->wakeup_time != tright->wakeup_time)
+    return tleft->wakeup_time < tright->wakeup_time;
+  else
+    return tleft->priority > tright->priority;
+}
+
 
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
-
-/* Added for 1.1 */
-static bool 
-sleeping_thread_less_func (const struct list_elem *a,
-                           const struct list_elem *b,
-                           void *aux UNUSED) 
-{
-  struct thread *thread_a = list_entry(a, struct thread, elem);
-  struct thread *thread_b = list_entry(b, struct thread, elem);
-  return thread_a->blocked.wakeup_time < thread_b->blocked.wakeup_time;
-}
-
-
-void
-thread_sleep (int64_t ticks)
-{
-  struct thread *cur = thread_current ();
-  enum intr_level old_level;
-  
-  ASSERT (!intr_context ());
-  old_level = intr_disable ();
-  cur->status = THREAD_BLOCKED;
-  cur->blocked.reason = SLEEP;
-  cur->blocked.wakeup_time = ticks;
-  if (cur != idle_thread)
-  {
-	  list_insert_ordered(&blocked_sleep_list, &cur->elem, sleeping_thread_less_func, NULL);
-  }
-  schedule ();
-  intr_set_level (old_level);
-}
