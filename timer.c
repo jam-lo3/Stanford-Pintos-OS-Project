@@ -196,6 +196,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
     t = list_entry (list_front (&timer_wait_list), struct thread, timer_elem);
     if (ticks < t->wakeup_time)
       break;
+  
     sema_up (&t->timer_sema);
     list_pop_front (&timer_wait_list);
   }
